@@ -1,1 +1,802 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no,viewport-fit=cover">
+<title>701shooter!</title>
 
+<style>
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:tahoma,sans-serif;
+    -webkit-tap-highlight-color:transparent;
+}
+
+html,body{
+    width:100%;
+    height:100%;
+    overflow:hidden;
+    background:#000;
+    touch-action:none;
+}
+
+#login{
+    position:fixed;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:#111;
+    z-index:20;
+}
+
+.box{
+    width:90%;
+    max-width:400px;
+    background:#222;
+    padding:25px;
+    border-radius:20px;
+    color:white;
+    text-align:center;
+}
+
+input,select,button{
+    width:100%;
+    padding:14px;
+    margin:8px 0;
+    border-radius:10px;
+    border:0;
+}
+
+button{
+    background:#00cc88;
+    color:white;
+    font-size:18px;
+    font-weight:bold;
+    cursor:pointer;
+}
+
+.colors{
+    display:flex;
+    justify-content:center;
+    gap:10px;
+    margin-top:8px;
+}
+
+.color{
+    width:35px;
+    height:35px;
+    border-radius:50%;
+    cursor:pointer;
+    border:3px solid transparent;
+}
+
+.color.active{
+    border-color:white;
+}
+
+#game{
+    display:none;
+    position:fixed;
+    inset:0;
+}
+
+canvas{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    background:#222;
+    display:block;
+}
+
+#info{
+    position:absolute;
+    top:10px;
+    left:10px;
+    z-index:5;
+    background:#0009;
+    color:white;
+    padding:10px 14px;
+    border-radius:10px;
+    direction:rtl;
+    pointer-events:none;
+}
+
+#online{
+    position:absolute;
+    top:10px;
+    right:10px;
+    z-index:5;
+    min-width:150px;
+    max-width:220px;
+    background:#0009;
+    color:white;
+    padding:10px 14px;
+    border-radius:10px;
+    direction:rtl;
+    pointer-events:none;
+}
+
+#onlineTitle{
+    font-weight:bold;
+    margin-bottom:5px;
+}
+
+#onlineList{
+    line-height:1.7;
+    white-space:normal;
+    word-break:break-word;
+}
+
+#mobile{
+    display:none;
+    position:absolute;
+    inset:0;
+    z-index:10;
+    pointer-events:none;
+}
+
+.joy{
+    position:absolute;
+    width:125px;
+    height:125px;
+    border-radius:50%;
+    background:#ffffff22;
+    border:2px solid #ffffff33;
+    pointer-events:auto;
+    touch-action:none;
+}
+
+.joy::after{
+    content:"";
+    position:absolute;
+    width:48px;
+    height:48px;
+    left:50%;
+    top:50%;
+    transform:translate(-50%,-50%);
+    border-radius:50%;
+    background:#ffffff38;
+    border:1px solid #ffffff55;
+    pointer-events:none;
+}
+
+#move{
+    bottom:25px;
+    left:25px;
+}
+
+#aim{
+    bottom:25px;
+    right:25px;
+}
+
+#fire{
+    position:absolute;
+    bottom:175px;
+    right:55px;
+    width:75px;
+    height:75px;
+    border-radius:50%;
+    background:#ff333377;
+    border:2px solid #ffffff44;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:30px;
+    pointer-events:auto;
+    touch-action:none;
+    user-select:none;
+}
+
+@media(max-width:700px){
+    #mobile{
+        display:block;
+    }
+
+    #info{
+        top:8px;
+        left:8px;
+        font-size:13px;
+        padding:7px 10px;
+    }
+
+    #online{
+        top:8px;
+        right:8px;
+        min-width:125px;
+        max-width:175px;
+        font-size:12px;
+        padding:7px 10px;
+    }
+
+    #move,#aim{
+        width:115px;
+        height:115px;
+        bottom:22px;
+    }
+
+    #move{left:18px;}
+    #aim{right:18px;}
+
+    #fire{
+        right:48px;
+        bottom:160px;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<div id="login">
+    <div class="box">
+        <h2>🔫 تفنگداران 701 (آب پاشه)</h2>
+
+        <select id="device">
+            <option value="pc">کامپیوتر</option>
+            <option value="mobile">موبایل</option>
+        </select>
+
+        <input id="name" placeholder="اسم تخ.میت" maxlength="20">
+
+        <p>رنگت:</p>
+
+        <div class="colors">
+            <div class="color active" data-c="red" style="background:red"></div>
+            <div class="color" data-c="blue" style="background:blue"></div>
+            <div class="color" data-c="lime" style="background:lime"></div>
+            <div class="color" data-c="yellow" style="background:yellow"></div>
+            <div class="color" data-c="purple" style="background:purple"></div>
+        </div>
+
+        <button id="start">بزن بریم همرو ب..زنیم</button>
+    </div>
+</div>
+
+<div id="game">
+    <canvas id="canvas"></canvas>
+
+    <div id="info">
+        <span id="uiName"></span>
+        <br>
+        Kill:
+        <span id="uiKill">0</span>
+    </div>
+
+    <div id="online">
+        <div id="onlineTitle">🟢 افراد آنلاین</div>
+        <div id="onlineList">در حال اتصال...</div>
+    </div>
+
+    <div id="mobile">
+        <div id="move" class="joy"></div>
+        <div id="aim" class="joy"></div>
+        <div id="fire">🔥</div>
+    </div>
+</div>
+
+<script>
+const WORKER_URL =
+    "wss://topdown-shooter-server.arashbashavard824.workers.dev";
+
+const MAP_SIZE = 4000;
+const PLAYER_RADIUS = 25;
+const BULLET_RADIUS = 5;
+
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+let W = innerWidth;
+let H = innerHeight;
+
+function resize(){
+    W = canvas.width = innerWidth;
+    H = canvas.height = innerHeight;
+}
+resize();
+addEventListener("resize", resize);
+
+let selectedColor = "red";
+
+document.querySelectorAll(".color").forEach(c=>{
+    c.onclick = ()=>{
+        document.querySelectorAll(".color")
+            .forEach(x=>x.classList.remove("active"));
+
+        c.classList.add("active");
+        selectedColor = c.dataset.c;
+    };
+});
+
+let socket = null;
+
+let player = {
+    id:null,
+    name:"",
+    color:"red",
+    x:2000,
+    y:2000,
+    angle:0,
+    hp:2,
+    kills:0
+};
+
+let players = {};
+let bots = [];
+let bullets = [];
+
+let walls = [
+    {x:500,y:500,w:400,h:60},
+    {x:1200,y:800,w:60,h:400},
+    {x:1800,y:300,w:500,h:50}
+];
+
+let connected = false;
+
+document.getElementById("start").onclick = ()=>{
+    const name = document.getElementById("name").value.trim();
+
+    if(!name){
+        alert("اسم وارد کن");
+        return;
+    }
+
+    player.name = name.slice(0,20);
+    player.color = selectedColor;
+
+    const device = document.getElementById("device").value;
+
+    document.getElementById("login").style.display = "none";
+    document.getElementById("game").style.display = "block";
+
+    document.getElementById("mobile").style.display =
+        device === "mobile" || innerWidth <= 700 ? "block" : "none";
+
+    connect();
+};
+
+function connect(){
+    socket = new WebSocket(WORKER_URL);
+
+    socket.onopen = ()=>{
+        connected = true;
+
+        socket.send(JSON.stringify({
+            type:"join",
+            name:player.name,
+            color:player.color
+        }));
+    };
+
+    socket.onmessage = e=>{
+        let data;
+
+        try{
+            data = JSON.parse(e.data);
+        }catch{
+            return;
+        }
+
+        if(data.type === "welcome"){
+            // سرور شناسه واقعی همین بازیکن را می‌دهد.
+            player.id = data.id;
+            return;
+        }
+
+        if(data.type === "state"){
+            players = {};
+
+            for(const p of data.players || []){
+                players[p.id] = p;
+            }
+
+            bots = data.bots || [];
+            bullets = data.bullets || [];
+
+            if(Array.isArray(data.walls)){
+                walls = data.walls;
+            }
+
+            // اطلاعات بازیکن فقط از نسخه سرور خوانده می‌شود.
+            const me = player.id ? players[player.id] : null;
+
+            if(me){
+                player = {
+                    ...player,
+                    ...me
+                };
+            }
+
+            updateOnline(data.online || []);
+        }
+    };
+
+    socket.onclose = ()=>{
+        connected = false;
+        document.getElementById("onlineList").innerText = "اتصال قطع شد";
+    };
+
+    socket.onerror = ()=>{
+        connected = false;
+    };
+}
+
+function updateOnline(names){
+    const list = document.getElementById("onlineList");
+
+    if(!names.length){
+        list.innerText = "هیچ‌کس";
+        return;
+    }
+
+    list.innerHTML = names
+        .map((name,i)=>`${i+1}. ${escapeHtml(name)}`)
+        .join("<br>");
+}
+
+function escapeHtml(text){
+    return String(text)
+        .replaceAll("&","&amp;")
+        .replaceAll("<","&lt;")
+        .replaceAll(">","&gt;")
+        .replaceAll('"',"&quot;")
+        .replaceAll("'","&#039;");
+}
+
+// =======================
+// GAME ENGINE
+// =======================
+
+let keys = {};
+
+addEventListener("keydown", e=>{
+    keys[e.key.toLowerCase()] = true;
+});
+
+addEventListener("keyup", e=>{
+    keys[e.key.toLowerCase()] = false;
+});
+
+let camera = {x:0,y:0};
+
+let mouse = {
+    x:W/2,
+    y:H/2
+};
+
+canvas.addEventListener("mousemove", e=>{
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+
+    updateAngleFromScreen(mouse.x,mouse.y);
+});
+
+canvas.addEventListener("mousedown", e=>{
+    if(e.button === 0){
+        shoot();
+    }
+});
+
+canvas.addEventListener("contextmenu", e=>e.preventDefault());
+
+function updateAngleFromScreen(x,y){
+    player.angle = Math.atan2(
+        y - H/2,
+        x - W/2
+    );
+}
+
+function shoot(){
+    if(!socket || socket.readyState !== WebSocket.OPEN){
+        return;
+    }
+
+    socket.send(JSON.stringify({
+        type:"shoot",
+        angle:player.angle
+    }));
+}
+
+let mobileMove = {x:0,y:0};
+
+let moveTouchId = null;
+let aimTouchId = null;
+
+function setupJoystick(id,type){
+    const el = document.getElementById(id);
+
+    el.addEventListener("touchstart",e=>{
+        e.preventDefault();
+
+        const t = e.changedTouches[0];
+
+        if(type === "move"){
+            moveTouchId = t.identifier;
+            updateMoveJoystick(t.clientX,t.clientY);
+        }else{
+            aimTouchId = t.identifier;
+            updateAimJoystick(t.clientX,t.clientY);
+        }
+    },{passive:false});
+
+    el.addEventListener("touchmove",e=>{
+        e.preventDefault();
+
+        for(const t of e.changedTouches){
+            if(
+                (type === "move" && t.identifier === moveTouchId) ||
+                (type === "aim" && t.identifier === aimTouchId)
+            ){
+                if(type === "move"){
+                    updateMoveJoystick(t.clientX,t.clientY);
+                }else{
+                    updateAimJoystick(t.clientX,t.clientY);
+                }
+            }
+        }
+    },{passive:false});
+
+    el.addEventListener("touchend",e=>{
+        e.preventDefault();
+
+        for(const t of e.changedTouches){
+            if(type === "move" && t.identifier === moveTouchId){
+                moveTouchId = null;
+                mobileMove.x = 0;
+                mobileMove.y = 0;
+            }
+
+            if(type === "aim" && t.identifier === aimTouchId){
+                aimTouchId = null;
+            }
+        }
+    },{passive:false});
+
+    el.addEventListener("touchcancel",()=>{
+        if(type === "move"){
+            moveTouchId = null;
+            mobileMove.x = 0;
+            mobileMove.y = 0;
+        }else{
+            aimTouchId = null;
+        }
+    });
+}
+
+function joystickVector(el,x,y){
+    const r = el.getBoundingClientRect();
+
+    const cx = r.left + r.width/2;
+    const cy = r.top + r.height/2;
+
+    let dx = x-cx;
+    let dy = y-cy;
+
+    const max = r.width * 0.38;
+    const len = Math.hypot(dx,dy);
+
+    if(len > max){
+        dx = dx/len*max;
+        dy = dy/len*max;
+    }
+
+    return {
+        x:dx/max,
+        y:dy/max
+    };
+}
+
+function updateMoveJoystick(x,y){
+    mobileMove = joystickVector(
+        document.getElementById("move"),
+        x,y
+    );
+}
+
+function updateAimJoystick(x,y){
+    const v = joystickVector(
+        document.getElementById("aim"),
+        x,y
+    );
+
+    if(Math.hypot(v.x,v.y) > 0.08){
+        player.angle = Math.atan2(v.y,v.x);
+    }
+}
+
+setupJoystick("move","move");
+setupJoystick("aim","aim");
+
+document.getElementById("fire").addEventListener(
+    "touchstart",
+    e=>{
+        e.preventDefault();
+        shoot();
+    },
+    {passive:false}
+);
+
+function update(){
+    let dx = 0;
+    let dy = 0;
+
+    if(keys["w"] || keys["arrowup"]) dy -= 1;
+    if(keys["s"] || keys["arrowdown"]) dy += 1;
+    if(keys["a"] || keys["arrowleft"]) dx -= 1;
+    if(keys["d"] || keys["arrowright"]) dx += 1;
+
+    // کنترلر سمت چپ موبایل
+    dx += mobileMove.x;
+    dy += mobileMove.y;
+
+    const len = Math.hypot(dx,dy);
+
+    if(len > 1){
+        dx /= len;
+        dy /= len;
+    }
+
+    // حرکت محلی فقط برای پاسخ‌گویی سریع دوربین است.
+    // موقعیت نهایی از سرور دریافت می‌شود.
+    if(socket && socket.readyState === WebSocket.OPEN){
+        socket.send(JSON.stringify({
+            type:"move",
+            x:dx,
+            y:dy,
+            angle:player.angle
+        }));
+    }
+
+    camera.x = player.x - W/2;
+    camera.y = player.y - H/2;
+
+    // دوربین هم بیرون نقشه نمی‌رود.
+    camera.x = Math.max(
+        0,
+        Math.min(MAP_SIZE-W, camera.x)
+    );
+
+    camera.y = Math.max(
+        0,
+        Math.min(MAP_SIZE-H, camera.y)
+    );
+}
+
+// =======================
+// DRAW
+// =======================
+
+function drawMap(){
+    ctx.fillStyle = "#333";
+    ctx.fillRect(
+        -camera.x,
+        -camera.y,
+        MAP_SIZE,
+        MAP_SIZE
+    );
+
+    ctx.fillStyle = "#777";
+
+    for(const w of walls){
+        ctx.fillRect(
+            w.x-camera.x,
+            w.y-camera.y,
+            w.w,
+            w.h
+        );
+    }
+
+    // مرز نقشه
+    ctx.strokeStyle = "#aaa";
+    ctx.lineWidth = 8;
+    ctx.strokeRect(
+        -camera.x,
+        -camera.y,
+        MAP_SIZE,
+        MAP_SIZE
+    );
+}
+
+function drawPlayer(p){
+    const x = p.x-camera.x;
+    const y = p.y-camera.y;
+
+    ctx.save();
+
+    ctx.translate(x,y);
+    ctx.rotate(p.angle || 0);
+
+    ctx.fillStyle = p.color || "white";
+
+    ctx.beginPath();
+    ctx.arc(
+        0,
+        0,
+        PLAYER_RADIUS,
+        0,
+        Math.PI*2
+    );
+    ctx.fill();
+
+    ctx.fillStyle = "black";
+    ctx.fillRect(15,-6,40,12);
+
+    ctx.restore();
+
+    ctx.fillStyle = "white";
+    ctx.font = "15px Arial";
+    ctx.textAlign = "center";
+
+    ctx.fillText(
+        `${p.name} | ${p.kills || 0}`,
+        x,
+        y-35
+    );
+}
+
+function drawBullets(){
+    ctx.fillStyle = "yellow";
+
+    for(const b of bullets){
+        ctx.beginPath();
+
+        ctx.arc(
+            b.x-camera.x,
+            b.y-camera.y,
+            BULLET_RADIUS,
+            0,
+            Math.PI*2
+        );
+
+        ctx.fill();
+    }
+}
+
+function render(){
+    ctx.clearRect(0,0,W,H);
+
+    drawMap();
+
+    // بازیکنان دیگر
+    for(const p of Object.values(players)){
+        if(p.id !== player.id){
+            drawPlayer(p);
+        }
+    }
+
+    // بات‌ها
+    for(const b of bots){
+        drawPlayer(b);
+    }
+
+    // بازیکن خودمان فقط یک بار و فقط از state سرور
+    const me = player.id ? players[player.id] : null;
+
+    if(me){
+        drawPlayer(me);
+    }
+
+    drawBullets();
+
+    document.getElementById("uiName").innerText =
+        player.name || "Player";
+
+    document.getElementById("uiKill").innerText =
+        player.kills || 0;
+}
+
+function loop(){
+    update();
+    render();
+    requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+
+</body>
+</html>
