@@ -261,6 +261,54 @@ function resetGameState() {
   player.style.bottom = "13%";
 }
 
+async function enterGameFullscreen() {
+
+    // فقط روی موبایل
+    if (!/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+        return;
+    }
+
+    try {
+
+        // فول‌اسکرین
+        if (document.documentElement.requestFullscreen) {
+            await document.documentElement.requestFullscreen();
+        }
+
+        // افقی کردن صفحه
+        if (screen.orientation && screen.orientation.lock) {
+            await screen.orientation.lock("landscape");
+        }
+
+    } catch (error) {
+
+        console.log("Fullscreen / Landscape:", error);
+
+    }
+}
+
+
+async function exitGameFullscreen() {
+
+    try {
+
+        // برگرداندن صفحه به حالت عادی
+        if (document.fullscreenElement) {
+            await document.exitFullscreen();
+        }
+
+        // برگرداندن به حالت عمودی
+        if (screen.orientation && screen.orientation.unlock) {
+            screen.orientation.unlock();
+        }
+
+    } catch (error) {
+
+        console.log("Exit fullscreen:", error);
+
+    }
+}
+
 function openGame() {
   menu.classList.add("hide");
   game.classList.add("ready");
@@ -376,14 +424,24 @@ function restart() {
   setTimeout(()=>tapHint.style.display="none",2200);
 }
 
-function returnMenu() {
-  gameOver.style.display = "none";
-  $("hud").style.display = "none";
-  game.classList.remove("ready");
-  menu.classList.remove("hide");
-  player.style.transform = "";
-  resetGameState();
-  loadLeaderboard();
+async function returnMenu() {
+
+    gameOver.style.display = "none";
+
+    $("hud").style.display = "none";
+
+    game.classList.remove("ready");
+
+    menu.classList.remove("hide");
+
+    player.style.transform = "";
+
+    resetGameState();
+
+    await exitGameFullscreen();
+
+    loadLeaderboard();
+
 }
 
 function loop(now) {
@@ -468,51 +526,46 @@ if(obstacleTimer > nextObstacleTime){
   raf = requestAnimationFrame(loop);
 }
 
-$("startBtn").addEventListener("click", () => {
+$("startBtn").addEventListener("click", async () => {
 
-  const name = safeName();
+    const name = safeName();
 
-  if(!nameInput.value.trim()){
+    if (!nameInput.value.trim()) {
 
-    alert("اسمتو وارد کن ک...");
-    nameInput.focus();
-    return;
+        alert("اسمتو وارد کن ک...");
+        nameInput.focus();
+        return;
 
-  }
+    }
 
+    if (!account) {
 
-  if(!account){
+        account = {
+            id: crypto.randomUUID(),
+            name: name,
+            best: 0
+        };
 
-    account = {
+    } else {
 
-      id: crypto.randomUUID(),
+        account.name = name;
 
-      name:name,
+    }
 
-      best:0
+    localStorage.setItem(
+        "runnerAccount",
+        JSON.stringify(account)
+    );
 
-    };
+    best = account.best || 0;
 
-  }else{
+    bestEl.textContent =
+        "کنده کاری قبل: " + best;
 
-    account.name = name;
+    // درخواست فول‌اسکرین و افقی شدن
+    await enterGameFullscreen();
 
-  }
-
-
-  localStorage.setItem(
-    "runnerAccount",
-    JSON.stringify(account)
-  );
-
-
-  best = account.best || 0;
-
-  bestEl.textContent =
-    "کنده کاری قبل: " + best;
-
-
-  startMenuAnimation();
+    startMenuAnimation();
 
 });
 
