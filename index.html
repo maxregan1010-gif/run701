@@ -248,6 +248,8 @@ function currentSpeed() {
 }
 
 function resetGameState() {
+  obstacleTimer = 0;
+  nextObstacleTime = 3000;
   score = 0; speed = CONFIG.INITIAL_SPEED; running = false; startedOnce = false;
   bossActive = false; bossTriggered = false; obstacleTimer = 0; textTimer = 0;
   jumpY = 0; vy = 0; grounded = true;
@@ -355,11 +357,11 @@ if(obstacles.length){
   const el = document.createElement("img");
   el.className = "obstacle";
   el.src = CONFIG.OBSTACLE_IMAGES[Math.floor(Math.random()*CONFIG.OBSTACLE_IMAGES.length)];
-  el.style.left = "calc(100vw + 30px)";
+  el.style.left = "calc(100vw + 250px)";
   el.style.width = (60 + Math.random()*30) + "px";
   el.style.height = (65 + Math.random()*30) + "px";
   game.appendChild(el);
-  obstacles.push({el, x:innerWidth+30, kind:"image", w:75, h:80});
+  obstacles.push({el, x:innerWidth+250, kind:"image", w:75, h:80});
 }
 
 function spawnTextObstacle() {
@@ -376,9 +378,9 @@ if(obstacles.length){
   const el = document.createElement("div");
   el.className = "obstacle textObstacle";
   el.textContent = words[Math.floor(Math.random()*words.length)];
-  el.style.left = "calc(100vw + 30px)";
+  el.style.left = "calc(100vw + 250px)";
   game.appendChild(el);
-  obstacles.push({el, x:innerWidth+30, kind:"text", w:120, h:55});
+  obstacles.push({el, x:innerWidth+250, kind:"text", w:120, h:55});
 }
 
 function hitTest(a,b) {
