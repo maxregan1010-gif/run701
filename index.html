@@ -254,6 +254,9 @@ canvas{
         </div>
 
         <button id="start">بزن بریم همرو ب..زنیم</button>
+        <div id="connectionStatus" style="display:none;margin-top:10px;color:#fff;font-size:14px;line-height:1.7">
+            در حال اتصال به سرور...
+        </div>
     </div>
 </div>
 
@@ -314,15 +317,20 @@ document.querySelectorAll(".color").forEach(c=>{
 
 let socket = null;
 
+/*
+    مهم:
+    بازیکن محلی دیگر مختصات خودش را جداگانه نگه نمی‌دارد.
+    مختصات واقعی همیشه از state سرور گرفته می‌شود.
+*/
 let player = {
-    id:null,
-    name:"",
-    color:"red",
-    x:2000,
-    y:2000,
-    angle:0,
-    hp:2,
-    kills:0
+    id: null,
+    name: "",
+    color: "red",
+    x: 2000,
+    y: 2000,
+    angle: 0,
+    hp: 2,
+    kills: 0
 };
 
 let players = {};
@@ -335,36 +343,112 @@ let walls = [
     {x:1800,y:300,w:500,h:50}
 ];
 
-let connected = false;
+/*
+    تا وقتی این دو مقدار true نشده‌اند،
+    بازی نمایش داده نمی‌شود.
+*/
+let socketConnected = false;
+let serverReady = false;
+let waitingState = null;
+let selectedDevice = "pc";
 
-document.getElementById("start").onclick = ()=>{
-    const name = document.getElementById("name").value.trim();
+const login = document.getElementById("login");
+const game = document.getElementById("game");
+const startButton = document.getElementById("start");
+const connectionStatus = document.getElementById("connectionStatus");
+
+function setConnectionStatus(text, show = true){
+    connectionStatus.innerText = text;
+    connectionStatus.style.display = show ? "block" : "none";
+}
+
+function showLogin(){
+    login.style.display = "flex";
+    game.style.display = "none";
+
+    startButton.disabled = false;
+    startButton.style.opacity = "1";
+    startButton.innerText = "بزن بریم همرو ب..زنیم";
+}
+
+function showGame(){
+    login.style.display = "none";
+    game.style.display = "block";
+
+    document.getElementById("mobile").style.display =
+        selectedDevice === "mobile" || innerWidth <= 700
+            ? "block"
+            : "none";
+}
+
+/*
+========================================
+شروع بازی
+========================================
+*/
+
+startButton.onclick = ()=>{
+    const name =
+        document.getElementById("name")
+            .value
+            .trim();
 
     if(!name){
         alert("اسم وارد کن");
         return;
     }
 
+    /*
+        قبل از اتصال، بازی مخفی می‌ماند.
+    */
     player.name = name.slice(0,20);
     player.color = selectedColor;
+    selectedDevice =
+        document.getElementById("device").value;
 
-    const device = document.getElementById("device").value;
+    socketConnected = false;
+    serverReady = false;
+    waitingState = null;
 
-    document.getElementById("login").style.display = "none";
-    document.getElementById("game").style.display = "block";
+    startButton.disabled = true;
+    startButton.style.opacity = "0.6";
+    startButton.innerText = "در حال اتصال...";
 
-    document.getElementById("mobile").style.display =
-        device === "mobile" || innerWidth <= 700 ? "block" : "none";
+    setConnectionStatus(
+        "در حال اتصال به سرور... لطفاً صبر کن"
+    );
 
     connect();
 };
 
+
+/*
+========================================
+اتصال
+========================================
+*/
+
 function connect(){
+
+    if(socket){
+        try{
+            socket.close();
+        }catch{}
+    }
+
     socket = new WebSocket(WORKER_URL);
 
     socket.onopen = ()=>{
-        connected = true;
 
+        socketConnected = true;
+
+        setConnectionStatus(
+            "اتصال برقرار شد؛ در حال دریافت اطلاعات بازیکنان..."
+        );
+
+        /*
+            نام و رنگ بعد از باز شدن اتصال ارسال می‌شود.
+        */
         socket.send(JSON.stringify({
             type:"join",
             name:player.name,
@@ -372,7 +456,9 @@ function connect(){
         }));
     };
 
+
     socket.onmessage = e=>{
+
         let data;
 
         try{
@@ -381,64 +467,230 @@ function connect(){
             return;
         }
 
+
+        /*
+        ================================
+        دریافت شناسه واقعی
+        ================================
+        */
+
         if(data.type === "welcome"){
-            // سرور شناسه واقعی همین بازیکن را می‌دهد.
+
             player.id = data.id;
+
+            /*
+                اگر state قبل از welcome رسیده بود،
+                حالا آن را پردازش می‌کنیم.
+            */
+            if(waitingState){
+                applyServerState(waitingState);
+                waitingState = null;
+            }
+
             return;
         }
 
+
+        /*
+        ================================
+        دریافت وضعیت بازی
+        ================================
+        */
+
         if(data.type === "state"){
-            players = {};
 
-            for(const p of data.players || []){
-                players[p.id] = p;
+            /*
+                اگر هنوز ID نداریم، state را نگه می‌داریم.
+            */
+            if(!player.id){
+
+                waitingState = data;
+
+                setConnectionStatus(
+                    "سرور وصل شد؛ در حال دریافت شناسه و وضعیت بازی..."
+                );
+
+                return;
             }
 
-            bots = data.bots || [];
-            bullets = data.bullets || [];
-
-            if(Array.isArray(data.walls)){
-                walls = data.walls;
-            }
-
-            // اطلاعات بازیکن فقط از نسخه سرور خوانده می‌شود.
-            const me = player.id ? players[player.id] : null;
-
-            if(me){
-                player = {
-                    ...player,
-                    ...me
-                };
-            }
-
-            updateOnline(data.online || []);
+            applyServerState(data);
         }
     };
 
-    socket.onclose = ()=>{
-        connected = false;
-        document.getElementById("onlineList").innerText = "اتصال قطع شد";
-    };
 
     socket.onerror = ()=>{
-        connected = false;
+
+        socketConnected = false;
+        serverReady = false;
+
+        setConnectionStatus(
+            "اتصال به سرور برقرار نشد. دوباره تلاش کن."
+        );
+
+        startButton.disabled = false;
+        startButton.style.opacity = "1";
+        startButton.innerText = "تلاش دوباره";
+    };
+
+
+    socket.onclose = ()=>{
+
+        socketConnected = false;
+        serverReady = false;
+
+        /*
+            اگر هنوز وارد بازی نشده بودیم،
+            صفحه ورود باقی می‌ماند.
+        */
+        if(!serverReady){
+
+            setConnectionStatus(
+                "اتصال قطع شد. دوباره تلاش کن."
+            );
+
+            startButton.disabled = false;
+            startButton.style.opacity = "1";
+            startButton.innerText = "تلاش دوباره";
+
+            return;
+        }
+
+        document.getElementById("onlineList").innerText =
+            "اتصال قطع شد";
     };
 }
 
-function updateOnline(names){
-    const list = document.getElementById("onlineList");
 
-    if(!names.length){
+/*
+========================================
+پردازش State سرور
+========================================
+*/
+
+function applyServerState(data){
+
+    const serverPlayers =
+        Array.isArray(data.players)
+            ? data.players
+            : [];
+
+    /*
+        players کاملاً از سرور ساخته می‌شود.
+    */
+    const nextPlayers = {};
+
+    for(const p of serverPlayers){
+
+        if(!p || !p.id){
+            continue;
+        }
+
+        nextPlayers[p.id] = p;
+    }
+
+    players = nextPlayers;
+
+    bots =
+        Array.isArray(data.bots)
+            ? data.bots
+            : [];
+
+    bullets =
+        Array.isArray(data.bullets)
+            ? data.bullets
+            : [];
+
+    if(Array.isArray(data.walls)){
+        walls = data.walls;
+    }
+
+    /*
+        بازیکن خودمان باید حتماً در state سرور باشد.
+        تا وقتی نباشد، بازی شروع نمی‌شود.
+    */
+    const me =
+        player.id
+            ? players[player.id]
+            : null;
+
+    if(!me){
+
+        serverReady = false;
+
+        setConnectionStatus(
+            "اتصال برقرار است؛ منتظر بارگذاری بازیکن از سرور..."
+        );
+
+        return;
+    }
+
+    /*
+        اطلاعات واقعی بازیکن از سرور.
+    */
+    player = {
+        ...player,
+        ...me
+    };
+
+    /*
+        حالا واقعاً آماده ورود به بازی هستیم.
+    */
+    if(!serverReady){
+
+        serverReady = true;
+
+        setConnectionStatus("", false);
+
+        showGame();
+    }
+
+    updateOnline();
+}
+
+
+/*
+========================================
+لیست آنلاین
+========================================
+*/
+
+function updateOnline(){
+
+    const list =
+        document.getElementById(
+            "onlineList"
+        );
+
+    const onlinePlayers =
+        Object.values(players)
+            .filter(p => p && p.name);
+
+    if(!onlinePlayers.length){
+
         list.innerText = "هیچ‌کس";
         return;
     }
 
-    list.innerHTML = names
-        .map((name,i)=>`${i+1}. ${escapeHtml(name)}`)
-        .join("<br>");
+    list.innerHTML =
+        onlinePlayers
+            .map((p,i)=>{
+
+                const isMe =
+                    p.id === player.id;
+
+                return `${i+1}. ${
+                    escapeHtml(p.name)
+                }${
+                    isMe ? " (شما)" : ""
+                }`;
+
+            })
+            .join("<br>");
 }
 
+
 function escapeHtml(text){
+
     return String(text)
         .replaceAll("&","&amp;")
         .replaceAll("<","&lt;")
@@ -447,9 +699,12 @@ function escapeHtml(text){
         .replaceAll("'","&#039;");
 }
 
-// =======================
-// GAME ENGINE
-// =======================
+
+/*
+========================================
+GAME ENGINE
+========================================
+*/
 
 let keys = {};
 
@@ -461,217 +716,533 @@ addEventListener("keyup", e=>{
     keys[e.key.toLowerCase()] = false;
 });
 
-let camera = {x:0,y:0};
+
+let camera = {
+    x:0,
+    y:0
+};
+
 
 let mouse = {
     x:W/2,
     y:H/2
 };
 
+
 canvas.addEventListener("mousemove", e=>{
+
     mouse.x = e.clientX;
     mouse.y = e.clientY;
 
-    updateAngleFromScreen(mouse.x,mouse.y);
+    updateAngleFromScreen(
+        mouse.x,
+        mouse.y
+    );
 });
 
+
 canvas.addEventListener("mousedown", e=>{
+
     if(e.button === 0){
         shoot();
     }
 });
 
-canvas.addEventListener("contextmenu", e=>e.preventDefault());
+
+canvas.addEventListener(
+    "contextmenu",
+    e=>e.preventDefault()
+);
+
 
 function updateAngleFromScreen(x,y){
-    player.angle = Math.atan2(
-        y - H/2,
-        x - W/2
-    );
+
+    if(!serverReady){
+        return;
+    }
+
+    player.angle =
+        Math.atan2(
+            y - H/2,
+            x - W/2
+        );
 }
 
+
+/*
+========================================
+تیراندازی
+========================================
+*/
+
 function shoot(){
-    if(!socket || socket.readyState !== WebSocket.OPEN){
+
+    if(
+        !serverReady ||
+        !socket ||
+        socket.readyState !== WebSocket.OPEN
+    ){
         return;
     }
 
     socket.send(JSON.stringify({
+
         type:"shoot",
+
         angle:player.angle
     }));
 }
 
-let mobileMove = {x:0,y:0};
 
-let moveTouchId = null;
-let aimTouchId = null;
+/*
+========================================
+کنترل موبایل
+========================================
+*/
 
-function setupJoystick(id,type){
-    const el = document.getElementById(id);
+let mobileMove = {
+    x:0,
+    y:0
+};
 
-    el.addEventListener("touchstart",e=>{
-        e.preventDefault();
+let movePointerId = null;
+let aimPointerId = null;
 
-        const t = e.changedTouches[0];
 
-        if(type === "move"){
-            moveTouchId = t.identifier;
-            updateMoveJoystick(t.clientX,t.clientY);
-        }else{
-            aimTouchId = t.identifier;
-            updateAimJoystick(t.clientX,t.clientY);
-        }
-    },{passive:false});
+function joystickVector(
+    el,
+    x,
+    y
+){
 
-    el.addEventListener("touchmove",e=>{
-        e.preventDefault();
+    const r =
+        el.getBoundingClientRect();
 
-        for(const t of e.changedTouches){
-            if(
-                (type === "move" && t.identifier === moveTouchId) ||
-                (type === "aim" && t.identifier === aimTouchId)
-            ){
-                if(type === "move"){
-                    updateMoveJoystick(t.clientX,t.clientY);
-                }else{
-                    updateAimJoystick(t.clientX,t.clientY);
-                }
-            }
-        }
-    },{passive:false});
+    const cx =
+        r.left +
+        r.width / 2;
 
-    el.addEventListener("touchend",e=>{
-        e.preventDefault();
+    const cy =
+        r.top +
+        r.height / 2;
 
-        for(const t of e.changedTouches){
-            if(type === "move" && t.identifier === moveTouchId){
-                moveTouchId = null;
-                mobileMove.x = 0;
-                mobileMove.y = 0;
-            }
+    let dx =
+        x - cx;
 
-            if(type === "aim" && t.identifier === aimTouchId){
-                aimTouchId = null;
-            }
-        }
-    },{passive:false});
+    let dy =
+        y - cy;
 
-    el.addEventListener("touchcancel",()=>{
-        if(type === "move"){
-            moveTouchId = null;
-            mobileMove.x = 0;
-            mobileMove.y = 0;
-        }else{
-            aimTouchId = null;
-        }
-    });
-}
+    const max =
+        r.width * 0.38;
 
-function joystickVector(el,x,y){
-    const r = el.getBoundingClientRect();
-
-    const cx = r.left + r.width/2;
-    const cy = r.top + r.height/2;
-
-    let dx = x-cx;
-    let dy = y-cy;
-
-    const max = r.width * 0.38;
-    const len = Math.hypot(dx,dy);
+    const len =
+        Math.hypot(
+            dx,
+            dy
+        );
 
     if(len > max){
-        dx = dx/len*max;
-        dy = dy/len*max;
+
+        dx =
+            dx / len * max;
+
+        dy =
+            dy / len * max;
     }
 
     return {
-        x:dx/max,
-        y:dy/max
+        x: dx / max,
+        y: dy / max
     };
 }
 
-function updateMoveJoystick(x,y){
-    mobileMove = joystickVector(
-        document.getElementById("move"),
-        x,y
-    );
+
+function updateMoveJoystick(
+    x,
+    y
+){
+
+    mobileMove =
+        joystickVector(
+            document.getElementById("move"),
+            x,
+            y
+        );
 }
 
-function updateAimJoystick(x,y){
-    const v = joystickVector(
-        document.getElementById("aim"),
-        x,y
-    );
 
-    if(Math.hypot(v.x,v.y) > 0.08){
-        player.angle = Math.atan2(v.y,v.x);
+function updateAimJoystick(
+    x,
+    y
+){
+
+    const v =
+        joystickVector(
+            document.getElementById("aim"),
+            x,
+            y
+        );
+
+    if(
+        Math.hypot(
+            v.x,
+            v.y
+        ) > 0.08
+    ){
+
+        player.angle =
+            Math.atan2(
+                v.y,
+                v.x
+            );
     }
 }
 
-setupJoystick("move","move");
-setupJoystick("aim","aim");
 
-document.getElementById("fire").addEventListener(
-    "touchstart",
+const moveJoy =
+    document.getElementById("move");
+
+const aimJoy =
+    document.getElementById("aim");
+
+
+/*
+    Pointer Events به جای touchmove ساده:
+    این باعث می‌شود دو انگشت همزمان
+    برای حرکت و هدف‌گیری کار کنند.
+*/
+
+moveJoy.addEventListener(
+    "pointerdown",
     e=>{
+
         e.preventDefault();
-        shoot();
-    },
-    {passive:false}
+
+        movePointerId =
+            e.pointerId;
+
+        try{
+            moveJoy.setPointerCapture(
+                e.pointerId
+            );
+        }catch{}
+
+        updateMoveJoystick(
+            e.clientX,
+            e.clientY
+        );
+    }
 );
 
+
+moveJoy.addEventListener(
+    "pointermove",
+    e=>{
+
+        e.preventDefault();
+
+        if(
+            e.pointerId !==
+            movePointerId
+        ){
+            return;
+        }
+
+        updateMoveJoystick(
+            e.clientX,
+            e.clientY
+        );
+    }
+);
+
+
+function resetMovePointer(){
+
+    movePointerId = null;
+
+    mobileMove.x = 0;
+    mobileMove.y = 0;
+}
+
+
+moveJoy.addEventListener(
+    "pointerup",
+    resetMovePointer
+);
+
+moveJoy.addEventListener(
+    "pointercancel",
+    resetMovePointer
+);
+
+moveJoy.addEventListener(
+    "lostpointercapture",
+    resetMovePointer
+);
+
+
+aimJoy.addEventListener(
+    "pointerdown",
+    e=>{
+
+        e.preventDefault();
+
+        aimPointerId =
+            e.pointerId;
+
+        try{
+            aimJoy.setPointerCapture(
+                e.pointerId
+            );
+        }catch{}
+
+        updateAimJoystick(
+            e.clientX,
+            e.clientY
+        );
+    }
+);
+
+
+aimJoy.addEventListener(
+    "pointermove",
+    e=>{
+
+        e.preventDefault();
+
+        if(
+            e.pointerId !==
+            aimPointerId
+        ){
+            return;
+        }
+
+        updateAimJoystick(
+            e.clientX,
+            e.clientY
+        );
+    }
+);
+
+
+function resetAimPointer(){
+
+    aimPointerId = null;
+}
+
+
+aimJoy.addEventListener(
+    "pointerup",
+    resetAimPointer
+);
+
+aimJoy.addEventListener(
+    "pointercancel",
+    resetAimPointer
+);
+
+aimJoy.addEventListener(
+    "lostpointercapture",
+    resetAimPointer
+);
+
+
+/*
+========================================
+دکمه شلیک موبایل
+========================================
+*/
+
+const fireButton =
+    document.getElementById(
+        "fire"
+    );
+
+
+fireButton.addEventListener(
+    "pointerdown",
+    e=>{
+
+        e.preventDefault();
+
+        shoot();
+    }
+);
+
+
+/*
+========================================
+ارسال حرکت به سرور
+========================================
+*/
+
+let lastMoveSend = 0;
+
 function update(){
+
+    if(!serverReady){
+        return;
+    }
+
     let dx = 0;
     let dy = 0;
 
-    if(keys["w"] || keys["arrowup"]) dy -= 1;
-    if(keys["s"] || keys["arrowdown"]) dy += 1;
-    if(keys["a"] || keys["arrowleft"]) dx -= 1;
-    if(keys["d"] || keys["arrowright"]) dx += 1;
 
-    // کنترلر سمت چپ موبایل
+    /*
+        کیبورد
+    */
+
+    if(
+        keys["w"] ||
+        keys["arrowup"]
+    ){
+        dy -= 1;
+    }
+
+    if(
+        keys["s"] ||
+        keys["arrowdown"]
+    ){
+        dy += 1;
+    }
+
+    if(
+        keys["a"] ||
+        keys["arrowleft"]
+    ){
+        dx -= 1;
+    }
+
+    if(
+        keys["d"] ||
+        keys["arrowright"]
+    ){
+        dx += 1;
+    }
+
+
+    /*
+        جوی‌استیک موبایل
+    */
+
     dx += mobileMove.x;
     dy += mobileMove.y;
 
-    const len = Math.hypot(dx,dy);
+
+    /*
+        جلوگیری از سرعت بیشتر
+        هنگام حرکت مورب
+    */
+
+    const len =
+        Math.hypot(
+            dx,
+            dy
+        );
 
     if(len > 1){
+
         dx /= len;
         dy /= len;
     }
 
-    // حرکت محلی فقط برای پاسخ‌گویی سریع دوربین است.
-    // موقعیت نهایی از سرور دریافت می‌شود.
-    if(socket && socket.readyState === WebSocket.OPEN){
-        socket.send(JSON.stringify({
-            type:"move",
-            x:dx,
-            y:dy,
-            angle:player.angle
-        }));
+
+    /*
+        حرکت فقط به صورت ورودی
+        به سرور ارسال می‌شود.
+
+        مهم:
+        مختصات x/y اینجا ارسال نمی‌شود.
+        سرور خودش موقعیت را محاسبه می‌کند.
+    */
+
+    const now = performance.now();
+
+    if(
+        socket &&
+        socket.readyState === WebSocket.OPEN &&
+        now - lastMoveSend >= 40
+    ){
+
+        lastMoveSend = now;
+
+        socket.send(
+            JSON.stringify({
+
+                type:"move",
+
+                dx:dx,
+
+                dy:dy,
+
+                angle:player.angle
+            })
+        );
     }
 
-    camera.x = player.x - W/2;
-    camera.y = player.y - H/2;
 
-    // دوربین هم بیرون نقشه نمی‌رود.
-    camera.x = Math.max(
-        0,
-        Math.min(MAP_SIZE-W, camera.x)
-    );
+    /*
+        دوربین روی موقعیت واقعی سرور
+        قرار می‌گیرد.
+    */
 
-    camera.y = Math.max(
-        0,
-        Math.min(MAP_SIZE-H, camera.y)
-    );
+    camera.x =
+        player.x -
+        W / 2;
+
+    camera.y =
+        player.y -
+        H / 2;
+
+
+    /*
+        دوربین از نقشه خارج نمی‌شود.
+    */
+
+    const maxCameraX =
+        Math.max(
+            0,
+            MAP_SIZE - W
+        );
+
+    const maxCameraY =
+        Math.max(
+            0,
+            MAP_SIZE - H
+        );
+
+
+    camera.x =
+        Math.max(
+            0,
+            Math.min(
+                maxCameraX,
+                camera.x
+            )
+        );
+
+
+    camera.y =
+        Math.max(
+            0,
+            Math.min(
+                maxCameraY,
+                camera.y
+            )
+        );
 }
 
-// =======================
-// DRAW
-// =======================
+
+/*
+========================================
+DRAW
+========================================
+*/
 
 function drawMap(){
+
     ctx.fillStyle = "#333";
+
     ctx.fillRect(
         -camera.x,
         -camera.y,
@@ -679,20 +1250,29 @@ function drawMap(){
         MAP_SIZE
     );
 
+
     ctx.fillStyle = "#777";
 
-    for(const w of walls){
+    for(
+        const w of walls
+    ){
+
         ctx.fillRect(
-            w.x-camera.x,
-            w.y-camera.y,
+            w.x - camera.x,
+            w.y - camera.y,
             w.w,
             w.h
         );
     }
 
-    // مرز نقشه
+
+    /*
+        مرز نقشه
+    */
+
     ctx.strokeStyle = "#aaa";
     ctx.lineWidth = 8;
+
     ctx.strokeRect(
         -camera.x,
         -camera.y,
@@ -701,97 +1281,213 @@ function drawMap(){
     );
 }
 
+
 function drawPlayer(p){
-    const x = p.x-camera.x;
-    const y = p.y-camera.y;
+
+    const x =
+        p.x -
+        camera.x;
+
+    const y =
+        p.y -
+        camera.y;
+
 
     ctx.save();
 
-    ctx.translate(x,y);
-    ctx.rotate(p.angle || 0);
+    ctx.translate(
+        x,
+        y
+    );
 
-    ctx.fillStyle = p.color || "white";
+    ctx.rotate(
+        p.angle || 0
+    );
+
+
+    /*
+        بدن
+    */
+
+    ctx.fillStyle =
+        p.color ||
+        "white";
 
     ctx.beginPath();
+
     ctx.arc(
         0,
         0,
         PLAYER_RADIUS,
         0,
-        Math.PI*2
+        Math.PI * 2
     );
+
     ctx.fill();
 
-    ctx.fillStyle = "black";
-    ctx.fillRect(15,-6,40,12);
+
+    /*
+        تفنگ
+    */
+
+    ctx.fillStyle =
+        "black";
+
+    ctx.fillRect(
+        15,
+        -6,
+        40,
+        12
+    );
+
 
     ctx.restore();
 
-    ctx.fillStyle = "white";
-    ctx.font = "15px Arial";
-    ctx.textAlign = "center";
+
+    /*
+        نام و Kill
+    */
+
+    ctx.fillStyle =
+        "white";
+
+    ctx.font =
+        "15px Arial";
+
+    ctx.textAlign =
+        "center";
 
     ctx.fillText(
         `${p.name} | ${p.kills || 0}`,
         x,
-        y-35
+        y - 35
     );
 }
 
-function drawBullets(){
-    ctx.fillStyle = "yellow";
 
-    for(const b of bullets){
+function drawBullets(){
+
+    ctx.fillStyle =
+        "yellow";
+
+
+    for(
+        const b of bullets
+    ){
+
         ctx.beginPath();
 
         ctx.arc(
-            b.x-camera.x,
-            b.y-camera.y,
+            b.x - camera.x,
+            b.y - camera.y,
             BULLET_RADIUS,
             0,
-            Math.PI*2
+            Math.PI * 2
         );
 
         ctx.fill();
     }
 }
 
+
 function render(){
-    ctx.clearRect(0,0,W,H);
+
+    ctx.clearRect(
+        0,
+        0,
+        W,
+        H
+    );
+
 
     drawMap();
 
-    // بازیکنان دیگر
-    for(const p of Object.values(players)){
-        if(p.id !== player.id){
+
+    /*
+        بازیکنان دیگر
+    */
+
+    for(
+        const p of
+        Object.values(players)
+    ){
+
+        if(
+            p.id !==
+            player.id
+        ){
+
             drawPlayer(p);
         }
     }
 
-    // بات‌ها
-    for(const b of bots){
+
+    /*
+        BOTهای سرور
+    */
+
+    for(
+        const b of bots
+    ){
+
         drawPlayer(b);
     }
 
-    // بازیکن خودمان فقط یک بار و فقط از state سرور
-    const me = player.id ? players[player.id] : null;
+
+    /*
+        بازیکن خودمان:
+        فقط همان نسخه‌ای که از سرور آمده.
+    */
+
+    const me =
+        player.id
+            ? players[player.id]
+            : null;
+
 
     if(me){
+
         drawPlayer(me);
     }
 
+
     drawBullets();
 
-    document.getElementById("uiName").innerText =
-        player.name || "Player";
 
-    document.getElementById("uiKill").innerText =
-        player.kills || 0;
+    document.getElementById(
+        "uiName"
+    ).innerText =
+        player.name ||
+        "Player";
+
+
+    document.getElementById(
+        "uiKill"
+    ).innerText =
+        player.kills ||
+        0;
 }
 
+
+/*
+========================================
+Game Loop
+========================================
+*/
+
 function loop(){
+
     update();
-    render();
+
+    if(serverReady){
+        render();
+    }else{
+        /*
+            صفحه بازی تا آماده شدن سرور
+            اصلاً نمایش داده نمی‌شود.
+        */
+    }
+
     requestAnimationFrame(loop);
 }
 
