@@ -569,45 +569,95 @@ function connect(){
 
 function applyServerState(data){
 
-    const serverPlayers =
-        Array.isArray(data.players)
-            ? data.players
-            : [];
-
     /*
-        players کاملاً از سرور ساخته می‌شود.
+        سرور ممکن است در یک لحظه state ناقص/قدیمی بفرستد.
+        بنابراین بازیکنان را کورکورانه پاک نمی‌کنیم؛
+        اطلاعات جدید را روی state قبلی merge می‌کنیم.
     */
-    const nextPlayers = {};
 
-    for(const p of serverPlayers){
+    if(Array.isArray(data.players)){
 
-        if(!p || !p.id){
-            continue;
+        const incoming = {};
+
+        for(const p of data.players){
+
+            if(!p || !p.id){
+                continue;
+            }
+
+            incoming[p.id] = {
+                ...(players[p.id] || {}),
+                ...p
+            };
         }
 
-        nextPlayers[p.id] = p;
+        /*
+            اگر state واقعاً لیست کامل بازیکنان است،
+            بازیکنانی که دیگر در آن نیستند باید حذف شوند.
+            ولی اگر فقط بازیکن خودمان آمده باشد، اطلاعات قبلی
+            سایر بازیکنان حفظ می‌شود.
+        */
+
+        const incomingIds =
+            Object.keys(incoming);
+
+        const looksLikeFullState =
+            incomingIds.length >= 2 ||
+            (
+                player.id &&
+                incomingIds.includes(player.id)
+            );
+
+        if(looksLikeFullState){
+
+            const nextPlayers = {};
+
+            for(const id of incomingIds){
+                nextPlayers[id] = incoming[id];
+            }
+
+            players = nextPlayers;
+
+        }else{
+
+            for(const id of incomingIds){
+                players[id] = incoming[id];
+            }
+        }
     }
 
-    players = nextPlayers;
 
-    bots =
-        Array.isArray(data.bots)
-            ? data.bots
-            : [];
+    /*
+        BOTها، تیرها و دیوارها همیشه از سرور می‌آیند.
+    */
 
-    bullets =
-        Array.isArray(data.bullets)
-            ? data.bullets
-            : [];
+    if(Array.isArray(data.bots)){
+        bots = data.bots;
+    }
+
+    if(Array.isArray(data.bullets)){
+        bullets = data.bullets;
+    }
 
     if(Array.isArray(data.walls)){
         walls = data.walls;
     }
 
+
     /*
-        بازیکن خودمان باید حتماً در state سرور باشد.
-        تا وقتی نباشد، بازی شروع نمی‌شود.
+        اگر سرور online را فرستاده، آن را هم نگه می‌داریم.
+        ولی برای نمایش، players مرجع اصلی است.
     */
+
+    if(Array.isArray(data.online)){
+        window.serverOnlineNames = data.online.slice();
+    }
+
+
+    /*
+        پیدا کردن بازیکن خودمان
+    */
+
     const me =
         player.id
             ? players[player.id]
@@ -624,17 +674,22 @@ function applyServerState(data){
         return;
     }
 
+
     /*
-        اطلاعات واقعی بازیکن از سرور.
+        مختصات و وضعیت بازیکن خودمان فقط از سرور.
     */
+
     player = {
         ...player,
         ...me
     };
 
+
     /*
-        حالا واقعاً آماده ورود به بازی هستیم.
+        وقتی اولین state کامل رسید،
+        بازی باز می‌شود.
     */
+
     if(!serverReady){
 
         serverReady = true;
@@ -643,6 +698,7 @@ function applyServerState(data){
 
         showGame();
     }
+
 
     updateOnline();
 }
@@ -661,15 +717,42 @@ function updateOnline(){
             "onlineList"
         );
 
+    /*
+        فقط بازیکنانی که واقعاً در state هستند.
+    */
+
     const onlinePlayers =
         Object.values(players)
-            .filter(p => p && p.name);
+            .filter(p =>
+                p &&
+                p.id &&
+                typeof p.name === "string" &&
+                p.name.trim()
+            );
+
+
+    /*
+        مرتب‌سازی ثابت بر اساس نام باعث می‌شود
+        ترتیب لیست بین بازیکنان مدام عوض نشود.
+    */
+
+    onlinePlayers.sort(
+        (a,b)=>
+            a.name.localeCompare(
+                b.name,
+                "fa"
+            )
+    );
+
 
     if(!onlinePlayers.length){
 
-        list.innerText = "هیچ‌کس";
+        list.innerText =
+            "هیچ‌کس";
+
         return;
     }
+
 
     list.innerHTML =
         onlinePlayers
@@ -678,14 +761,15 @@ function updateOnline(){
                 const isMe =
                     p.id === player.id;
 
-                return `${i+1}. ${
-                    escapeHtml(p.name)
-                }${
-                    isMe ? " (شما)" : ""
-                }`;
+                return `
+                    <div style="margin:2px 0">
+                        🟢 ${i+1}. ${escapeHtml(p.name)}
+                        ${isMe ? " (شما)" : ""}
+                    </div>
+                `;
 
             })
-            .join("<br>");
+            .join("");
 }
 
 
@@ -698,7 +782,6 @@ function escapeHtml(text){
         .replaceAll('"',"&quot;")
         .replaceAll("'","&#039;");
 }
-
 
 /*
 ========================================
@@ -1409,12 +1492,13 @@ function render(){
 
     for(
         const p of
-        Object.values(players)
+        Object.values(players || {})
     ){
 
         if(
-            p.id !==
-            player.id
+            p &&
+            p.id &&
+            p.id !== player.id
         ){
 
             drawPlayer(p);
